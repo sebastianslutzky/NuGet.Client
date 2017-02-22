@@ -25,9 +25,10 @@ namespace NuGet.SolutionRestoreManager
     /// Loads on solution open to attach to build events.
     /// </summary>
     // Flag AllowsBackgroundLoading is set to False because switching to Main thread wiht JTF is creating
+    // Flag PackageAutoLoadFlags is set to BackgroundLoad which will allow this package to be loaded asynchronously
     // performance overhead in InitializeAsync() API.
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-    [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string)]
+    [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string, PackageAutoLoadFlags.BackgroundLoad)]
     [Guid(PackageGuidString)]
     public sealed class RestoreManagerPackage : AsyncPackage
     {
