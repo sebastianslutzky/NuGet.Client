@@ -28,7 +28,6 @@ namespace NuGet.SolutionRestoreManager
         private const int PromoteAttemptsLimit = 150;
 
         private readonly IServiceProvider _serviceProvider;
-        private readonly AsyncLazy<ErrorListProvider> _errorListProvider;
         private readonly Lazy<IVsSolutionManager> _solutionManager;
         private readonly Lazy<INuGetLockService> _lockService;
         private readonly Lazy<Common.ILogger> _logger;
@@ -47,7 +46,7 @@ namespace NuGet.SolutionRestoreManager
         private readonly JoinableTaskCollection _joinableCollection;
         private readonly JoinableTaskFactory _joinableFactory;
 
-        private ErrorListProvider ErrorListProvider => NuGetUIThreadHelper.JoinableTaskFactory.Run(_errorListProvider.GetValueAsync);
+        private Lazy<ErrorListTableDataSource> _errorListTableDataSource;
 
         public Task<bool> CurrentRestoreOperation => _activeRestoreTask;
 
@@ -60,7 +59,8 @@ namespace NuGet.SolutionRestoreManager
             Lazy<IVsSolutionManager> solutionManager,
             Lazy<INuGetLockService> lockService,
             [Import(typeof(VisualStudioActivityLogger))]
-            Lazy<Common.ILogger> logger)
+            Lazy<Common.ILogger> logger,
+            Lazy<ErrorListTableDataSource> errorListTableDataSource)
         {
             if (serviceProvider == null)
             {
@@ -82,21 +82,20 @@ namespace NuGet.SolutionRestoreManager
                 throw new ArgumentNullException(nameof(logger));
             }
 
+            if (errorListTableDataSource == null)
+            {
+                throw new ArgumentNullException(nameof(errorListTableDataSource));
+            }
+
             _serviceProvider = serviceProvider;
             _solutionManager = solutionManager;
             _lockService = lockService;
             _logger = logger;
+            _errorListTableDataSource = errorListTableDataSource;
 
             var joinableTaskContextNode = new JoinableTaskContextNode(ThreadHelper.JoinableTaskContext);
             _joinableCollection = joinableTaskContextNode.CreateCollection();
             _joinableFactory = joinableTaskContextNode.CreateFactory(_joinableCollection);
-
-            _errorListProvider = new AsyncLazy<ErrorListProvider>(async () =>
-                {
-                    await NuGetUIThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    return new ErrorListProvider(serviceProvider);
-                },
-                _joinableFactory);
 
             _componentModel = new AsyncLazy<IComponentModel>(async () =>
                 {
@@ -104,7 +103,6 @@ namespace NuGet.SolutionRestoreManager
                     return serviceProvider.GetService<SComponentModel, IComponentModel>();
                 },
                 _joinableFactory);
-
             Reset();
         }
 
@@ -141,10 +139,6 @@ namespace NuGet.SolutionRestoreManager
 #if VS15
                 Unadvise();
 #endif
-                if (_errorListProvider.IsValueCreated)
-                {
-                    (await _errorListProvider.GetValueAsync()).Dispose();
-                }
             });
         }
 
@@ -203,7 +197,12 @@ namespace NuGet.SolutionRestoreManager
         private void SolutionEvents_AfterClosing()
         {
             Reset();
-            ErrorListProvider.Tasks.Clear();
+
+            // Clear warnings/errors from nuget
+            if (_errorListTableDataSource.IsValueCreated)
+            {
+                _errorListTableDataSource.Value.ClearNuGetEntries();
+            }
         }
 
         public async Task<bool> ScheduleRestoreAsync(
@@ -392,14 +391,25 @@ namespace NuGet.SolutionRestoreManager
                 var componentModel = await _componentModel.GetValueAsync(jobCts.Token);
 
                 var logger = componentModel.GetService<RestoreOperationLogger>();
-                await logger.StartAsync(
-                    request.RestoreSource,
-                    ErrorListProvider,
-                    _joinableFactory,
-                    jobCts);
 
-                var job = componentModel.GetService<ISolutionRestoreJob>();
-                return await job.ExecuteAsync(request, _restoreJobContext, logger, jobCts.Token);
+                try
+                {
+                    // Start logging
+                    await logger.StartAsync(
+                        request.RestoreSource,
+                        _errorListTableDataSource,
+                        _joinableFactory,
+                        jobCts);
+
+                    // Run restore
+                    var job = componentModel.GetService<ISolutionRestoreJob>();
+                    return await job.ExecuteAsync(request, _restoreJobContext, logger, jobCts.Token);
+                }
+                finally
+                {
+                    // Complete all logging
+                    await logger.StopAsync();
+                }
             }
         }
 
