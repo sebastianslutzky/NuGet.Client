@@ -45,10 +45,6 @@ namespace NuGet.Protocol.VisualStudio
         {
             _packageSourceProvider = packageSourceProvider;
             _resourceProviders = Repository.Provider.GetVisualStudio().Concat(resourceProviders);
-            _repositories = new List<SourceRepository>();
-
-            // Refresh the package sources
-            Init();
 
             // Hook up event to refresh package sources when the package sources changed
             packageSourceProvider.PackageSourcesChanged += (sender, e) => { Init(); };
@@ -60,6 +56,12 @@ namespace NuGet.Protocol.VisualStudio
         /// <returns></returns>
         public IEnumerable<SourceRepository> GetRepositories()
         {
+            if (_repositories == null)
+            {
+                // initialize repositories from package source 
+                Init();
+            }
+
             return _repositories;
         }
 
@@ -86,7 +88,7 @@ namespace NuGet.Protocol.VisualStudio
 
         private void Init()
         {
-            _repositories.Clear();
+            _repositories = new List<SourceRepository>();
             foreach (var source in _packageSourceProvider.LoadPackageSources())
             {
                 if (source.IsEnabled)
