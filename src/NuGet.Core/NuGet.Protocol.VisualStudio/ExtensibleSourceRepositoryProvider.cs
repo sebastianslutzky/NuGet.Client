@@ -99,7 +99,7 @@ namespace NuGet.Protocol.VisualStudio
                 }
             }
 
-            Interlocked.CompareExchange(ref _repositories, repositories, null);
+            Interlocked.Exchange(ref _repositories, repositories);
         }
     }
 }
