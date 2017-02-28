@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Linq;
+using System.Threading;
 using NuGet.Configuration;
 using NuGet.Protocol.Core.Types;
 
@@ -47,7 +48,7 @@ namespace NuGet.Protocol.VisualStudio
             _resourceProviders = Repository.Provider.GetVisualStudio().Concat(resourceProviders);
 
             // Hook up event to refresh package sources when the package sources changed
-            packageSourceProvider.PackageSourcesChanged += (sender, e) => { Init(); };
+            packageSourceProvider.PackageSourcesChanged += (sender, e) => { ResetRepositories(); };
         }
 
         /// <summary>
@@ -59,7 +60,7 @@ namespace NuGet.Protocol.VisualStudio
             if (_repositories == null)
             {
                 // initialize repositories from package source 
-                Init();
+                ResetRepositories();
             }
 
             return _repositories;
@@ -86,17 +87,19 @@ namespace NuGet.Protocol.VisualStudio
             get { return _packageSourceProvider; }
         }
 
-        private void Init()
+        private void ResetRepositories()
         {
-            _repositories = new List<SourceRepository>();
+            var repositories = new List<SourceRepository>();
             foreach (var source in _packageSourceProvider.LoadPackageSources())
             {
                 if (source.IsEnabled)
                 {
                     var sourceRepo = new SourceRepository(source, _resourceProviders);
-                    _repositories.Add(sourceRepo);
+                    repositories.Add(sourceRepo);
                 }
             }
+
+            Interlocked.CompareExchange(ref _repositories, repositories, null);
         }
     }
 }
