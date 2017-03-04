@@ -311,9 +311,9 @@ Function Test-BuildEnvironment {
     Set-Alias msbuild $script:MSBuildExe -Scope Script -Force
     Set-Variable BuildToolsets -Value $ConfigureObject.Toolsets -Scope Script -Force
 
-    $script:VS14Installed = ($BuildToolsets | where vs14 -ne $null)
-    $script:VS15Installed = ($BuildToolsets | where vs15 -ne $null)
-
+    $script:VS14Installed = ($BuildToolsets |gm| where name -eq vs14)
+    $script:VS15Installed =  ($BuildToolsets |gm| where name -eq vs15)
+    
     $ConfigureObject |
          select -expand envvars -ea Ignore |
          %{ $_.psobject.properties } |
